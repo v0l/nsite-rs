@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSite Directory</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .status {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .status.loading {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .sites-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .site-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .site-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .profile-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #e0e0e0;
+        }
+
+        .profile-name {
+            font-weight: 600;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .site-meta {
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 10px;
+        }
+
+        .visit-btn {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9em;
+            transition: background 0.3s ease;
+        }
+
+        .visit-btn:hover {
+            background: #5568d3;
+        }
+
+        .relay-info {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+
+        .relay-info h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .relay-list {
+            list-style: none;
+        }
+
+        .relay-list li {
+            padding: 5px 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>NSite Directory</h1>
+    <p class="subtitle">Discover sites hosted on Nostr</p>
+
+    <div id="status" class="status loading">Connecting to Nostr relays...</div>
+
+    <div id="sites" class="sites-grid"></div>
+
+    <div class="relay-info">
+        <h3>Relay Configuration</h3>
+        <ul id="relay-list" class="relay-list">
+            <li>wss://relay.damus.io</li>
+            <li>wss://relay.snort.social</li>
+            <li>wss://relay.primal.net</li>
+            <li>wss://nos.lol</li>
+        </ul>
+    </div>
+    <template id="profile-card">
+        <div class="profile-header">
+            <img class="profile-avatar" alt="Profile avatar">
+            <div class="profile-name"></div>
+        </div>
+    </template>
+</div>
+
+<script type="module">
+    import {NostrSystem, RequestBuilder, NostrLink} from 'https://esm.sh/@snort/system';
+
+    const system = new NostrSystem({
+        automaticOutboxModel: false
+    });
+    const RELAYS = [
+        'wss://relay.damus.io',
+        'wss://relay.snort.social',
+        'wss://relay.primal.net',
+        'wss://nos.lol'
+    ];
+
+    const NSITE_KIND = 34128;
+    const INDEX_PATH = '/index.html';
+
+    // Utility functions
+    function formatTimestamp(timestamp) {
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    }
+
+    function createSiteCard(event) {
+        const card = document.createElement('div');
+        card.className = 'site-card';
+        card.dataset.pubkey = event.pubkey;
+
+        const npubKey = NostrLink.publicKey(event.pubkey).encode();
+
+        // Clone profile card template
+        const template = document.getElementById('profile-card');
+        const profileHeader = template.content.cloneNode(true);
+
+        const avatar = profileHeader.querySelector('.profile-avatar');
+        const name = profileHeader.querySelector('.profile-name');
+
+        // Set default values
+        avatar.src = `https://nostr-rs-api.v0l.io/avatar/robots/${event.pubkey}`;
+        name.textContent = npubKey.substring(0, 16) + '...';
+
+        const meta = document.createElement('div');
+        meta.className = 'site-meta';
+        meta.textContent = `Created: ${formatTimestamp(event.created_at)}`;
+
+        const visitBtn = document.createElement('a');
+        visitBtn.className = 'visit-btn';
+        visitBtn.textContent = 'Visit Site';
+        visitBtn.href = `http://${npubKey}.${window.location.host}`;
+        visitBtn.target = '_blank';
+
+        card.appendChild(profileHeader);
+        card.appendChild(meta);
+        card.appendChild(visitBtn);
+
+        // Track this pubkey for profile updates
+        system.profileLoader.TrackKeys(event.pubkey);
+
+        return card;
+    }
+
+    function updateCardProfile(pubkey, profile) {
+        const card = document.querySelector(`.site-card[data-pubkey="${pubkey}"]`);
+        if (!card) return;
+
+        const avatar = card.querySelector('.profile-avatar');
+        const name = card.querySelector('.profile-name');
+
+        if (profile) {
+            if (profile.picture) {
+                avatar.src = profile.picture;
+            }
+            if (profile.display_name || profile.name) {
+                name.textContent = profile.display_name || profile.name;
+            }
+        }
+    }
+
+    // Main execution
+    async function main() {
+        const statusEl = document.getElementById('status');
+        const sitesEl = document.getElementById('sites');
+
+        try {
+            statusEl.textContent = 'Connecting to Nostr relays...';
+            const rb = new RequestBuilder("sites");
+            rb.withFilter().kinds([NSITE_KIND]).tag("d", [INDEX_PATH]).relay(RELAYS);
+
+            // Fetch events
+            const evs = await system.Fetch(rb);
+
+            if (!evs || evs.length === 0) {
+                statusEl.className = 'status';
+                statusEl.textContent = 'No sites found yet. Be the first to create one!';
+                return;
+            }
+
+            // Deduplicate by pubkey, keeping only the most recent event per pubkey
+            const eventsByPubkey = new Map();
+            for (const event of evs) {
+                const existing = eventsByPubkey.get(event.pubkey);
+                if (!existing || event.created_at > existing.created_at) {
+                    eventsByPubkey.set(event.pubkey, event);
+                }
+            }
+
+            // Sort by most recent first
+            const sortedEvents = Array.from(eventsByPubkey.values())
+                .sort((a, b) => b.created_at - a.created_at);
+
+            statusEl.className = 'status success';
+            statusEl.textContent = `Found ${sortedEvents.length} site(s)`;
+
+            // Render all cards
+            sortedEvents.forEach(event => {
+                const card = createSiteCard(event);
+                sitesEl.appendChild(card);
+            });
+        } catch (error) {
+            console.error('Error:', error);
+            statusEl.className = 'status error';
+            statusEl.textContent = `Error: ${error.message}`;
+        }
+    }
+
+    system.Init().then(async () => {
+        // Listen for profile updates
+        system.profileLoader.cache.on("change", (keys) => {
+            keys.forEach(pubkey => {
+                const profile = system.profileLoader.cache.getFromCache(pubkey);
+                if (profile) {
+                    updateCardProfile(pubkey, profile);
+                }
+            });
+        });
+
+        await Promise.all(RELAYS.map(r => system.ConnectToRelay(r)));
+        main().catch(console.error)
+    })
+</script>
+</body>
+</html>
