@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 
 mod site;
 
-type SiteMap = Arc<RwLock<HashMap<[u8; 32], SiteInfo>>>;
+type SiteMap = Arc<RwLock<HashMap<String, SiteInfo>>>;
 type SiteAliasMap = Arc<RwLock<HashMap<String, [u8; 32]>>>;
 
 /// NSite proxy
