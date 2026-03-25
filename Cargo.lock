@@ -1456,6 +1456,7 @@ dependencies = [
  "nostr-sdk",
  "reqwest",
  "rocket",
+ "sha2",
  "tokio",
 ]
 

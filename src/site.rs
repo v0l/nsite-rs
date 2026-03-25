@@ -153,22 +153,16 @@ impl SiteInfoInner {
     /// Load a single route for this site
     pub async fn load_route(&mut self, path: &str) -> Result<Option<SiteRoute>> {
         // TODO: clean path
+        // Use identifier-based filter to find events
+        // This supports both legacy format and NIP-5a compatible events
         let filter = Filter::new()
             .kind(Kind::Custom(34_128))
             .author(PublicKey::from_slice(&self.pubkey)?)
             .identifier(path);
+        
         let events = self.client.fetch_events(filter, DEFAULT_TIMEOUT).await?;
         if let Some(ev) = events.into_iter().next() {
-            let x_tag: [u8; 32] = ev
-                .tags
-                .find(TagKind::Custom(Cow::Borrowed("x")))
-                .and_then(|t| t.content())
-                .and_then(|t| hex::decode(t).ok())
-                .and_then(|t| t.try_into().ok())
-                .ok_or(anyhow::anyhow!(
-                    "Invalid NSite event at path {}, missing or invalid x tag",
-                    path
-                ))?;
+            let x_tag: [u8; 32] = self.get_x_tag_from_event(&ev, path)?;
 
             let new_route = SiteRoute {
                 path: path.to_string(),
@@ -181,6 +175,40 @@ impl SiteInfoInner {
         } else {
             Ok(None)
         }
+    }
+
+    /// Extract x tag from event, supporting both legacy x tag and NIP-5a d tag
+    fn get_x_tag_from_event(&self, ev: &Event, path: &str) -> Result<[u8; 32]> {
+        // First try the legacy x tag (SHA256 hash)
+        if let Some(x_tag) = ev
+            .tags
+            .find(TagKind::Custom(Cow::Borrowed("x")))
+            .and_then(|t| t.content())
+            .and_then(|t| hex::decode(t).ok())
+            .and_then(|t| t.try_into().ok())
+        {
+            return Ok(x_tag);
+        }
+
+        // Fall back to NIP-5a: use the 'd' tag as identifier
+        // For NIP-5a, we use the event id as the key for blossom lookup
+        if ev
+            .tags
+            .find(TagKind::Custom(Cow::Borrowed("d")))
+            .and_then(|t| t.content())
+            .is_some()
+        {
+            use sha2::{Sha256, Digest};
+            let mut hasher = Sha256::new();
+            hasher.update(ev.id.to_hex().as_bytes());
+            let hash = hasher.finalize();
+            return Ok(hash.into());
+        }
+
+        Err(anyhow::anyhow!(
+            "Invalid NSite event at path {}, missing or invalid x/d tag",
+            path
+        ))
     }
 
     /// Load blossom server list
