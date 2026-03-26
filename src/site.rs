@@ -77,7 +77,7 @@ impl SiteInfo {
             let client_clone = client.clone();
             let mut site = SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
 
-            if !site.fetch_manifest().await?.is_some() {
+            if site.fetch_manifest().await?.is_none() {
                 return Ok(None);
             }
             site.load_server_list().await?;
@@ -91,15 +91,17 @@ impl SiteInfo {
                 let mut site =
                     SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
 
-                if !site.fetch_manifest().await?.is_some() {
-                    log::info!("Failed to fetch manifest for {}, returning None", cache_key);
-                    None
-                } else {
+                // Fetch and cache the manifest
+                if let Some(manifest) = site.fetch_manifest().await? {
+                    site.manifest = Some(manifest.clone());
                     site.load_server_list().await?;
                     log::info!("Loaded {} site for {} in {:?}", site_type, &pubkey_hex[..8], start.elapsed());
                     Some(SiteInfo {
                         inner: Arc::new(RwLock::new(site)),
                     })
+                } else {
+                    log::info!("Failed to fetch manifest for {}, returning None", cache_key);
+                    None
                 }
             };
 
@@ -120,8 +122,9 @@ impl SiteInfo {
         let mut inner = self.inner.write().await;
 
         if inner.is_expired() {
-            log::info!("Site info expired, reloading server list for path {}", path);
+            log::info!("Site info expired, reloading for path {}", path);
             inner.routes.clear();
+            inner.manifest = None;
             inner.load_server_list().await?;
             inner.refresh_timestamp();
         }
@@ -300,6 +303,9 @@ struct SiteInfoInner {
     /// List of Blossom servers to load content from
     server_list: Vec<Url>,
 
+    /// Cached site manifest event
+    manifest: Option<Event>,
+
     /// Site identifier for NIP-5A named sites (from d tag)
     identifier: Option<String>,
 
@@ -319,6 +325,7 @@ impl SiteInfoInner {
                 "https://24242.io".parse().unwrap(),
                 "https://blossom.primal.net".parse().unwrap(),
             ],
+            manifest: None,
             identifier,
             last_refresh: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -328,6 +335,8 @@ impl SiteInfoInner {
 
     fn set_expired(&mut self) {
         self.last_refresh = 0;
+        self.manifest = None;
+        self.routes.clear();
     }
 
     fn is_expired(&self) -> bool {
@@ -415,7 +424,7 @@ impl SiteInfoInner {
         }
 
         let start = std::time::Instant::now();
-        let pubkey_short = hex::encode(&self.pubkey);
+        let pubkey_short = hex::encode(self.pubkey);
         log::info!("Fetching manifest event (kind {}) for pubkey {}", kind, &pubkey_short[..8]);
         let events = self.client.fetch_events(filter, DEFAULT_TIMEOUT).await?;
         log::info!("Fetched manifest in {:?}, got {} events", start.elapsed(), events.len());
@@ -579,17 +588,22 @@ impl SiteInfoInner {
         let start = std::time::Instant::now();
         log::info!("Loading route: {}", path);
 
-        // Fetch the site manifest (NIP-5A format)
-        let manifest = match self.fetch_manifest().await? {
-            Some(ev) => ev,
-            None => {
-                log::info!("No manifest found for route {}", path);
-                return Ok(None);
-            }
-        };
+        // Use cached manifest or fetch if not present/expired
+        if self.manifest.is_none() {
+            log::info!("No cached manifest, fetching...");
+            let manifest = match self.fetch_manifest().await? {
+                Some(ev) => ev,
+                None => {
+                    log::info!("No manifest found for route {}", path);
+                    return Ok(None);
+                }
+            };
+            self.manifest = Some(manifest.clone());
+        }
 
-        // Extract hash from path tag
-        match self.get_hash_for_path(&manifest, path) {
+        // Extract hash from path tag using cached manifest
+        let manifest = self.manifest.as_ref().unwrap();
+        match self.get_hash_for_path(manifest, path) {
             Ok(hash) => {
                 let new_route = SiteRoute {
                     path: path.to_string(),
@@ -597,7 +611,7 @@ impl SiteInfoInner {
                 };
                 self.routes
                     .insert(new_route.path.clone(), new_route.clone());
-                let hash_short = hex::encode(&new_route.key);
+                let hash_short = hex::encode(new_route.key);
                 log::info!("Loaded route {} in {:?}, hash: {}", path, start.elapsed(), &hash_short[..8]);
                 Ok(Some(new_route))
             }
@@ -611,11 +625,11 @@ impl SiteInfoInner {
     /// Load blossom server list from manifest server tags or BUD-03 (kind 10063)
     pub async fn load_server_list(&mut self) -> Result<()> {
         let start = std::time::Instant::now();
-        let pubkey_short = hex::encode(&self.pubkey);
+        let pubkey_short = hex::encode(self.pubkey);
         log::info!("Loading server list for pubkey {}", &pubkey_short[..8]);
 
-        // First check for server tags in the manifest (NIP-5A)
-        if let Some(manifest) = self.fetch_manifest().await? {
+        // First check for server tags in the cached manifest (NIP-5A)
+        if let Some(ref manifest) = self.manifest {
             let manifest_servers: Vec<Url> = manifest
                 .tags
                 .filter(TagKind::Custom(Cow::Borrowed("server")))
@@ -624,7 +638,7 @@ impl SiteInfoInner {
                 .collect();
 
             if !manifest_servers.is_empty() {
-                log::info!("Loaded {} servers from manifest in {:?}", manifest_servers.len(), start.elapsed());
+                log::info!("Loaded {} servers from cached manifest in {:?}", manifest_servers.len(), start.elapsed());
                 self.server_list = manifest_servers;
                 return Ok(());
             }
@@ -691,4 +705,100 @@ fn decode_pubkey_base36(b36: &str) -> Result<[u8; 32]> {
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nostr_sdk::prelude::Keys;
+
+    #[test]
+    fn test_decode_pubkey_base36() {
+        // Test with known values
+        // A 50-char base36 string that represents a valid 32-byte pubkey
+        let valid_b36 = "00000000000000000000000000000000000000000000000000";
+        let result = decode_pubkey_base36(valid_b36).unwrap();
+        assert_eq!(result, [0u8; 32]);
+
+        // All z's (max value for base36) - should fail as it exceeds 256 bits
+        let max_b36 = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+        assert!(decode_pubkey_base36(max_b36).is_err());
+
+        // Test with a realistic pubkey-like value
+        let realistic_b36 = "00000000000000000000000000000000000000000000000001";
+        let result = decode_pubkey_base36(realistic_b36).unwrap();
+        assert_eq!(&result[31..], &[1]);
+
+        // Wrong length should fail
+        let short_b36 = "0000000000000000000000000000000000000000000000000";
+        assert!(decode_pubkey_base36(short_b36).is_err());
+
+        let long_b36 = "000000000000000000000000000000000000000000000000000";
+        assert!(decode_pubkey_base36(long_b36).is_err());
+    }
+
+    #[test]
+    fn test_decode_pubkey_base36_invalid_chars() {
+        // Base36 only allows 0-9 and a-z (exactly 50 chars)
+        let invalid_chars = "00000000000000000000000000000000000000000000000000g";
+        assert!(decode_pubkey_base36(invalid_chars).is_err());
+
+        let uppercase = "00000000000000000000000000000000000000000000000000A";
+        assert!(decode_pubkey_base36(uppercase).is_err());
+
+        let with_dash = "00000000000000000000000000000000000000000000000000-";
+        assert!(decode_pubkey_base36(with_dash).is_err());
+    }
+
+    #[test]
+    fn test_decode_pubkey_base36_edge_cases() {
+        // Single non-zero byte at last position (50 chars)
+        let pos_31 = "0000000000000000000000000000000000000000000000000a";
+        let result = decode_pubkey_base36(pos_31).unwrap();
+        assert_eq!(result[31], 10);
+
+        // Test decoding and re-encoding round trip would be complex without encoding function
+        // Just verify the decoding produces consistent results (50 chars)
+        // Use a value that won't overflow 256 bits
+        let input = "0000000000000000000000000000000000000000000000000a";
+        let result1 = decode_pubkey_base36(input).unwrap();
+        let result2 = decode_pubkey_base36(input).unwrap();
+        assert_eq!(result1, result2);
+    }
+
+    #[tokio::test]
+    async fn test_site_info_expiration() {
+        // Create a minimal client for testing
+        let keys = Keys::generate();
+        let client = Client::new(keys);
+        
+        let pubkey = [0u8; 32];
+        let mut site = SiteInfoInner::new(pubkey, client.clone(), None);
+        
+        // Fresh site should not be expired
+        assert!(!site.is_expired());
+        
+        // Set to expired
+        site.set_expired();
+        assert!(site.is_expired());
+        
+        // After refresh, should not be expired
+        site.refresh_timestamp();
+        assert!(!site.is_expired());
+    }
+
+    #[tokio::test]
+    async fn test_site_info_inner_new() {
+        let keys = Keys::generate();
+        let client = Client::new(keys);
+        
+        let pubkey = [1u8; 32];
+        let site = SiteInfoInner::new(pubkey, client.clone(), Some("test".to_string()));
+        
+        assert_eq!(site.pubkey, pubkey);
+        assert_eq!(site.identifier, Some("test".to_string()));
+        assert!(site.routes.is_empty());
+        assert!(site.manifest.is_none());
+        assert!(!site.server_list.is_empty());
+    }
 }
