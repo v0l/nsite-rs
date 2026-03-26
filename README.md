@@ -124,6 +124,10 @@ This gateway fully implements NIP-5A:
 - ✅ Path tag resolution
 - ✅ d tag validation for named sites
 
+## Live Demo
+
+Visit https://nwb.tf to see the directory in action.
+
 ## License
 
 MIT
