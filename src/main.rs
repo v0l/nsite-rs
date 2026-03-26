@@ -1,30 +1,20 @@
+use crate::site::SiteInfo;
 use anyhow::Result;
-use axum::{
-    Router,
-    extract::State,
-    http::{StatusCode, header},
-    response::Response,
-    routing::get,
-};
 use clap::Parser;
 use log::{error, info};
 use nostr_sdk::Client;
-use std::{
-    collections::HashMap,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
-use tokio::net::TcpListener;
+use rocket::fs::NamedFile;
+use rocket::http::ContentType;
+use rocket::{Config, Either, Rocket, routes};
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr};
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_http::cors::CorsLayer;
 
 mod site;
 
-const INDEX_HTML: &str = include_str!("index.html");
-
-type SiteMap = Arc<RwLock<HashMap<String, site::SiteInfo>>>;
+type SiteMap = Arc<RwLock<HashMap<[u8; 32], SiteInfo>>>;
 type SiteAliasMap = Arc<RwLock<HashMap<String, [u8; 32]>>>;
 
 /// NSite proxy
@@ -35,29 +25,22 @@ struct Args {
     pub relay: Vec<String>,
 }
 
-#[tokio::main]
+#[rocket::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .map_err(|_| anyhow::anyhow!("Failed to install crypto provider"))?;
-
-    let args = Args::parse();
+    let mut args = Args::parse();
     let client = Client::builder().build();
 
-    let relays = if args.relay.is_empty() {
-        vec![
+    if args.relay.is_empty() {
+        args.relay = vec![
             "wss://relay.damus.io".to_string(),
             "wss://relay.snort.social".to_string(),
             "wss://relay.primal.net".to_string(),
             "wss://nos.lol".to_string(),
-        ]
-    } else {
-        args.relay
-    };
-
-    for r in &relays {
+        ];
+    }
+    for r in args.relay {
         info!("Connecting to {}", r);
         client.add_relay(r).await?;
     }
@@ -66,88 +49,43 @@ async fn main() -> Result<()> {
     let site_map = SiteMap::default();
     let site_alias_map = SiteAliasMap::default();
 
-    let app = Router::new()
-        .route("/", get(serve_site))
-        .route("/{*path}", get(serve_site))
-        .layer(CorsLayer::permissive())
-        .layer(tower_http::trace::TraceLayer::new_for_http())
-        .with_state((site_map, site_alias_map, client));
+    let mut config = Config::default();
+    config.address = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
-    let addr = SocketAddr::from((IpAddr::V4(Ipv4Addr::UNSPECIFIED), 3000));
-    info!("Listening on {}", addr);
-
-    let listener = TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    Rocket::custom(config)
+        .manage(site_map)
+        .manage(site_alias_map)
+        .manage(client)
+        .mount("/", routes![serve_site])
+        .launch()
+        .await?;
 
     Ok(())
 }
 
+#[rocket::get("/<path..>", rank = 1)]
 async fn serve_site(
-    State((site_map, site_alias_map, client)): State<(SiteMap, SiteAliasMap, Client)>,
-    request: axum::extract::Request,
-) -> Result<Response, StatusCode> {
-    let path_str = request.uri().path().trim_start_matches('/');
-    let path_buf = if path_str.is_empty() {
-        "index.html".to_string()
-    } else {
-        path_str.to_string()
-    };
-
-    let host = request
-        .headers()
-        .get(header::HOST)
-        .and_then(|h| h.to_str().ok())
-        .ok_or(StatusCode::BAD_REQUEST)?;
-
-    let site =
-        match site::SiteInfo::from_request(host, &client, &site_map, &site_alias_map, &path_buf)
-            .await
-        {
-            Ok(site) => site,
-            Err(_) => {
-                let mut response = Response::new(axum::body::Body::from(INDEX_HTML));
-                response
-                    .headers_mut()
-                    .insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
-                return Ok(response);
-            }
+    path: PathBuf,
+    site: Option<SiteInfo>,
+) -> Option<Either<NamedFile, (ContentType, &'static str)>> {
+    if let Some(site) = site {
+        let path_str = path.display().to_string();
+        let path = if path_str == "" {
+            "/index.html".to_string()
+        } else {
+            format!("/{}", path_str)
         };
-
-    match site.serve_route(&format!("/{}", path_buf)).await {
-        Ok(file_path) => {
-            let mut file = File::open(&file_path).await.map_err(|_| {
-                error!("Failed to open file");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
-            let mut contents = Vec::new();
-            file.read_to_end(&mut contents).await.map_err(|_| {
-                error!("Failed to read file");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
-            let mut response = Response::new(axum::body::Body::from(contents));
-            let content_type = match file_path.extension().and_then(|e| e.to_str()) {
-                Some("html") | Some("htm") => "text/html",
-                Some("css") => "text/css",
-                Some("js") => "application/javascript",
-                Some("json") => "application/json",
-                Some("png") => "image/png",
-                Some("jpg") | Some("jpeg") => "image/jpeg",
-                Some("gif") => "image/gif",
-                Some("svg") => "image/svg+xml",
-                Some("woff") => "font/woff",
-                Some("woff2") => "font/woff2",
-                _ => "application/octet-stream",
-            };
-            response
-                .headers_mut()
-                .insert(header::CONTENT_TYPE, content_type.parse().unwrap());
-            Ok(response)
+        match site.serve_route(&path).await {
+            Ok(f) => NamedFile::open(f).await.ok().map(Either::Left),
+            Err(e) => {
+                error!("Failed to open route: {}", e);
+                None
+            }
         }
-        Err(e) => {
-            error!("Failed to serve route: {}", e);
-            Err(StatusCode::NOT_FOUND)
-        }
+    } else {
+        Some(Either::Right((
+            ContentType::HTML,
+            include_str!("index.html"),
+        )))
     }
 }
