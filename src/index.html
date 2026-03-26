@@ -12,82 +12,86 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.5;
+            color: hsl(222.2 47.4% 11.2%);
+            background: hsl(0 0% 100%);
             min-height: 100vh;
-            padding: 20px;
         }
 
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
+            padding: 48px 24px;
         }
 
         h1 {
-            color: #667eea;
-            margin-bottom: 10px;
-            font-size: 2.5em;
+            color: hsl(222.2 47.4% 11.2%);
+            margin-bottom: 0;
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -0.025em;
         }
 
         .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1em;
+            color: hsl(215 20.2% 65.1%);
+            margin-bottom: 32px;
+            font-size: 1.25rem;
         }
 
         .status {
             padding: 12px 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
-            font-weight: 500;
+            margin-bottom: 32px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            background: hsl(210 40% 96.1%);
+            color: hsl(222.2 47.4% 11.2%);
         }
 
         .status.loading {
-            background: #e3f2fd;
-            color: #1976d2;
+            background: hsl(210 40% 96.1%);
         }
 
         .status.success {
-            background: #e8f5e9;
-            color: #388e3c;
+            background: hsl(142 76% 36% / 0.1);
+            color: hsl(142 76% 36%);
         }
 
         .status.error {
-            background: #ffebee;
-            color: #c62828;
+            background: hsl(0 84% 60% / 0.1);
+            color: hsl(0 84% 60%);
         }
 
         .sites-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 30px;
+            gap: 16px;
+            margin-top: 24px;
         }
 
         .site-card {
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 12px;
             padding: 20px;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
+            background: hsl(0 0% 100%);
+            box-shadow: 0 1px 3px hsl(0 0% 0% / 0.1);
+            display: flex;
+            flex-direction: column;
         }
 
         .site-card:hover {
-            border-color: #667eea;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            border-color: hsl(215 20.2% 65.1%);
+            box-shadow: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -2px hsl(0 0% 0% / 0.05);
             transform: translateY(-2px);
         }
 
         .profile-header {
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 15px;
+            gap: 16px;
+            margin-bottom: 16px;
         }
 
         .profile-avatar {
@@ -95,92 +99,157 @@
             height: 48px;
             border-radius: 50%;
             object-fit: cover;
-            background: #e0e0e0;
+            background: hsl(210 40% 96.1%);
+            border: none;
         }
 
         .profile-name {
+            font-weight: 700;
+            font-size: 1.125rem;
+            color: hsl(222.2 47.4% 11.2%);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .site-type-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.6875rem;
             font-weight: 600;
-            font-size: 1.1em;
-            color: #333;
+            margin-left: 6px;
+        }
+
+        .site-type-badge.named {
+            background: hsl(262 83% 58%);
+            color: white;
+        }
+
+        .site-description {
+            font-size: 0.9375rem;
+            color: hsl(215.4 16.3% 46.9%);
+            margin-top: 8px;
+            line-height: 1.6;
+            max-height: 3.2em;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
         }
 
         .site-meta {
-            font-size: 0.85em;
-            color: #999;
-            margin-top: 10px;
+            font-size: 0.75rem;
+            color: hsl(215 20.2% 65.1%);
+            margin-top: 12px;
+            font-weight: 500;
         }
 
         .visit-btn {
-            display: inline-block;
-            margin-top: 10px;
-            padding: 8px 16px;
-            background: #667eea;
-            color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 16px;
+            padding: 10px 20px;
+            background: hsl(222.2 47.4% 11.2%);
+            color: hsl(210 40% 98%);
             text-decoration: none;
-            border-radius: 4px;
-            font-size: 0.9em;
-            transition: background 0.3s ease;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 1px 3px hsl(0 0% 0% / 0.1);
+            align-self: flex-start;
         }
 
         .visit-btn:hover {
-            background: #5568d3;
+            background: hsl(217.2 32.6% 17.5%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px hsl(0 0% 0% / 0.15);
+        }
+
+        .visit-btn.source-btn {
+            margin-left: 8px;
+            background: hsl(210 40% 96.1%);
+            color: hsl(222.2 47.4% 11.2%);
+        }
+
+        .visit-btn.source-btn:hover {
+            background: hsl(215 20.2% 65.1%);
+            color: white;
         }
 
         .relay-info {
-            margin-top: 30px;
-            padding: 15px;
-            background: #f9f9f9;
-            border-radius: 8px;
-            font-size: 0.9em;
+            margin-top: 40px;
+            padding: 20px;
+            background: hsl(0 0% 98%);
+            border-radius: 12px;
+            font-size: 0.875rem;
+            border: 1px solid hsl(214.3 31.8% 91.4%);
         }
 
         .relay-info h3 {
-            margin-bottom: 10px;
-            color: #667eea;
+            margin-bottom: 16px;
+            color: hsl(222.2 47.4% 11.2%);
+            font-size: 0.875rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
 
         .relay-list {
             list-style: none;
+            margin-bottom: 12px;
         }
 
         .relay-list li {
-            padding: 5px 0;
-            color: #666;
+            padding: 6px 0;
+            color: hsl(215 20.2% 65.1%);
+            font-size: 0.8125rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        .connection-status {
+            padding-top: 12px;
+            border-top: 1px solid hsl(214.3 31.8% 91.4%);
+            color: hsl(215 20.2% 65.1%);
+            font-size: 0.8125rem;
         }
     </style>
 </head>
 <body>
-<div class="container">
-    <h1>NSite Directory</h1>
-    <p class="subtitle">Discover sites hosted on Nostr</p>
-
-    <div id="status" class="status loading">Connecting to Nostr relays...</div>
-
-    <div id="sites" class="sites-grid"></div>
-
-    <div class="relay-info">
-        <h3>Relay Configuration</h3>
-        <ul id="relay-list" class="relay-list">
-            <li>wss://relay.damus.io</li>
-            <li>wss://relay.snort.social</li>
-            <li>wss://relay.primal.net</li>
-            <li>wss://nos.lol</li>
-        </ul>
-    </div>
-    <template id="profile-card">
-        <div class="profile-header">
-            <img class="profile-avatar" alt="Profile avatar">
-            <div class="profile-name"></div>
-        </div>
-    </template>
-</div>
+<div id="app"></div>
 
 <script type="module">
-    import {NostrSystem, RequestBuilder, NostrLink} from 'https://esm.sh/@snort/system';
+    import {v4 as uuidv4} from 'https://esm.sh/uuid@11.1.0';
+    
+    if (!crypto.randomUUID) {
+        crypto.randomUUID = uuidv4;
+    }
 
-    const system = new NostrSystem({
-        automaticOutboxModel: false
-    });
+    import {h, render, Component} from 'https://esm.sh/preact@10.29.0';
+    import {useState, useEffect, useRef} from 'https://esm.sh/preact@10.29.0/hooks';
+    import {NostrSystem, RequestBuilder, NostrLink} from 'https://esm.sh/@snort/system@2.0.0-pre.11';
+    import {hex} from 'https://esm.sh/@scure/base@1.2.6';
+
+    const base36 = {
+        encode: (bytes) => {
+            const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
+            let num = BigInt('0x' + hex.encode(bytes));
+            if (num === 0n) return '0';
+            let result = '';
+            while (num > 0n) {
+                result = alphabet[Number(num % 36n)] + result;
+                num = num / 36n;
+            }
+            return result;
+        }
+    };
+
     const RELAYS = [
         'wss://relay.damus.io',
         'wss://relay.snort.social',
@@ -188,131 +257,149 @@
         'wss://nos.lol'
     ];
 
-    const NSITE_KIND = 34128;
-    const INDEX_PATH = '/index.html';
+    const ROOT_SITE_KIND = 15128;
+    const NAMED_SITE_KIND = 35128;
 
-    // Utility functions
-    function formatTimestamp(timestamp) {
-        const date = new Date(timestamp * 1000);
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    }
+    const system = new NostrSystem({automaticOutboxModel: false});
+    system.Init().then(() => {
+        Promise.all(RELAYS.map(r => system.ConnectToRelay(r))).catch(console.error);
+    }).catch(console.error);
 
-    function createSiteCard(event) {
-        const card = document.createElement('div');
-        card.className = 'site-card';
-        card.dataset.pubkey = event.pubkey;
-
+    function SiteCard({event, profile}) {
         const npubKey = NostrLink.publicKey(event.pubkey).encode();
+        const dTag = event.tags?.find(tag => tag[0] === 'd')?.[1];
+        const sourceUrl = event.tags?.find(tag => tag[0] === 'source')?.[1];
+        const isNamed = !!dTag;
 
-        // Clone profile card template
-        const template = document.getElementById('profile-card');
-        const profileHeader = template.content.cloneNode(true);
+        const formatTimestamp = (timestamp) => {
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        };
 
-        const avatar = profileHeader.querySelector('.profile-avatar');
-        const name = profileHeader.querySelector('.profile-name');
+        const avatarSrc = profile?.picture || `https://nostr-rs-api.v0l.io/avatar/robots/${event.pubkey}`;
+        const displayName = profile?.display_name || profile?.name || npubKey.substring(0, 16) + '...';
+        const description = profile?.about || '';
 
-        // Set default values
-        avatar.src = `https://nostr-rs-api.v0l.io/avatar/robots/${event.pubkey}`;
-        name.textContent = npubKey.substring(0, 16) + '...';
-
-        const meta = document.createElement('div');
-        meta.className = 'site-meta';
-        meta.textContent = `Created: ${formatTimestamp(event.created_at)}`;
-
-        const visitBtn = document.createElement('a');
-        visitBtn.className = 'visit-btn';
-        visitBtn.textContent = 'Visit Site';
-        visitBtn.href = `http://${npubKey}.${window.location.host}`;
-        visitBtn.target = '_blank';
-
-        card.appendChild(profileHeader);
-        card.appendChild(meta);
-        card.appendChild(visitBtn);
-
-        // Track this pubkey for profile updates
-        system.profileLoader.TrackKeys(event.pubkey);
-
-        return card;
+        const pubkeyBytes = hex.decode(event.pubkey);
+        const pubkeyB36 = base36.encode(pubkeyBytes).toLowerCase();
+        const subdomain = isNamed ? `${pubkeyB36}${dTag}` : npubKey;
+        return h('div', {class: 'site-card'},
+            h('div', {class: 'profile-header'},
+                h('img', {class: 'profile-avatar', src: avatarSrc, alt: 'Profile avatar'}),
+                h('div', {class: 'profile-name'},
+                    displayName,
+                    isNamed && h('span', {class: 'site-type-badge named'}, dTag)
+                )
+            ),
+            description && h('div', {class: 'site-description'}, description),
+            h('div', {class: 'site-meta'}, `Created: ${formatTimestamp(event.created_at)}`),
+            h('a', {
+                class: 'visit-btn',
+                href: `http://${subdomain}.${window.location.host}`,
+                target: '_blank',
+                rel: 'noopener noreferrer'
+            }, 'Visit Site'),
+            sourceUrl && h('a', {
+                class: 'visit-btn source-btn',
+                href: sourceUrl,
+                target: '_blank',
+                rel: 'noopener noreferrer'
+            }, 'Source')
+        );
     }
 
-    function updateCardProfile(pubkey, profile) {
-        const card = document.querySelector(`.site-card[data-pubkey="${pubkey}"]`);
-        if (!card) return;
+    function Directory() {
+        const [sites, setSites] = useState([]);
+        const [status, setStatus] = useState('loading');
 
-        const avatar = card.querySelector('.profile-avatar');
-        const name = card.querySelector('.profile-name');
+        useEffect(() => {
+            const fetchSites = async () => {
+                try {
+                    setStatus('Connecting to Nostr relays...');
+                    const rb = new RequestBuilder('sites');
+                    rb.withFilter().kinds([ROOT_SITE_KIND, NAMED_SITE_KIND]).relay(RELAYS);
 
-        if (profile) {
-            if (profile.picture) {
-                avatar.src = profile.picture;
-            }
-            if (profile.display_name || profile.name) {
-                name.textContent = profile.display_name || profile.name;
-            }
-        }
-    }
+                    const evs = await system.Fetch(rb);
 
-    // Main execution
-    async function main() {
-        const statusEl = document.getElementById('status');
-        const sitesEl = document.getElementById('sites');
+                    if (!evs || evs.length === 0) {
+                        setStatus('No sites found yet. Be the first to create one!');
+                        return;
+                    }
 
-        try {
-            statusEl.textContent = 'Connecting to Nostr relays...';
-            const rb = new RequestBuilder("sites");
-            rb.withFilter().kinds([NSITE_KIND]).tag("d", [INDEX_PATH]).relay(RELAYS);
+                    const hasIndexPath = (event) => {
+                        return event.tags?.some(tag => tag[0] === 'path' && tag[1] === '/index.html');
+                    };
 
-            // Fetch events
-            const evs = await system.Fetch(rb);
+                    const indexEvents = evs.filter(hasIndexPath);
 
-            if (!evs || evs.length === 0) {
-                statusEl.className = 'status';
-                statusEl.textContent = 'No sites found yet. Be the first to create one!';
-                return;
-            }
+                    const eventsByPubkey = new Map();
+                    for (const event of indexEvents) {
+                        const existing = eventsByPubkey.get(event.pubkey);
+                        if (!existing || event.created_at > existing.created_at) {
+                            eventsByPubkey.set(event.pubkey, event);
+                        }
+                    }
 
-            // Deduplicate by pubkey, keeping only the most recent event per pubkey
-            const eventsByPubkey = new Map();
-            for (const event of evs) {
-                const existing = eventsByPubkey.get(event.pubkey);
-                if (!existing || event.created_at > existing.created_at) {
-                    eventsByPubkey.set(event.pubkey, event);
+                    const sortedEvents = Array.from(eventsByPubkey.values())
+                        .sort((a, b) => b.created_at - a.created_at);
+
+                    sortedEvents.forEach(event => {
+                        system.profileLoader.TrackKeys(event.pubkey);
+                    });
+
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    setSites(sortedEvents);
+                    setStatus(`Found ${sortedEvents.length} site(s)`);
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus(`Error: ${error.message}`);
                 }
-            }
+            };
 
-            // Sort by most recent first
-            const sortedEvents = Array.from(eventsByPubkey.values())
-                .sort((a, b) => b.created_at - a.created_at);
+            fetchSites();
 
-            statusEl.className = 'status success';
-            statusEl.textContent = `Found ${sortedEvents.length} site(s)`;
+            const handleProfileUpdate = (keys) => {
+                keys.forEach(pubkey => {
+                    const profile = system.profileLoader.cache.getFromCache(pubkey);
+                    if (profile) {
+                        setSites(prev => prev.filter(e => e.pubkey !== pubkey));
+                        system.profileLoader.TrackKeys(pubkey);
+                    }
+                });
+            };
 
-            // Render all cards
-            sortedEvents.forEach(event => {
-                const card = createSiteCard(event);
-                sitesEl.appendChild(card);
-            });
-        } catch (error) {
-            console.error('Error:', error);
-            statusEl.className = 'status error';
-            statusEl.textContent = `Error: ${error.message}`;
-        }
+            system.profileLoader.cache.on('change', handleProfileUpdate);
+
+            return () => {
+                if (system.profileLoader?.cache) {
+                    system.profileLoader.cache.off('change', handleProfileUpdate);
+                }
+            };
+        }, []);
+
+        const getProfile = (pubkey) => {
+            if (!system.profileLoader?.cache) return null;
+            return system.profileLoader.cache.getFromCache(pubkey);
+        };
+
+        return h('div', {class: 'container'},
+            h('h1', null, 'NSite Directory'),
+            h('p', {class: 'subtitle'}, 'Discover sites hosted on Nostr'),
+            h('div', {class: `status ${status === 'loading' ? 'loading' : status.includes('Found') ? 'success' : 'error'}`}, status),
+            sites.length > 0 && h('div', {class: 'sites-grid'},
+                sites.map(event => h(SiteCard, {key: event.id, event, profile: getProfile(event.pubkey)}))
+            ),
+            h('div', {class: 'relay-info'},
+                h('h3', null, 'Relay Configuration'),
+                h('ul', {class: 'relay-list'},
+                    RELAYS.map(relay => h('li', {key: relay}, relay))
+                )
+            )
+        );
     }
 
-    system.Init().then(async () => {
-        // Listen for profile updates
-        system.profileLoader.cache.on("change", (keys) => {
-            keys.forEach(pubkey => {
-                const profile = system.profileLoader.cache.getFromCache(pubkey);
-                if (profile) {
-                    updateCardProfile(pubkey, profile);
-                }
-            });
-        });
-
-        await Promise.all(RELAYS.map(r => system.ConnectToRelay(r)));
-        main().catch(console.error)
-    })
+    render(h(Directory), document.getElementById('app'));
 </script>
 </body>
 </html>
