@@ -47,14 +47,18 @@ impl SiteInfo {
         let cache_key = if let Some(ref id) = identifier {
             format!("{}-{}", pubkey_hex, id)
         } else {
-            pubkey_hex
+            pubkey_hex.clone()
         };
+
+        let start = std::time::Instant::now();
+        let site_type = identifier.map_or("root".to_string(), |id| format!("named:{}", id));
+        log::info!("Loading {} site for pubkey {} (cache_key: {})", site_type, &pubkey_hex[..8], cache_key);
 
         // Check if there's an in-flight request for this site
         let notify = {
             let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
             if let Some(existing_notify) = in_flight.get(&cache_key) {
-                // Another request is loading this site, wait for it
+                log::info!("Request for {} is in-flight, waiting...", cache_key);
                 Some(existing_notify.clone())
             } else {
                 // No in-flight request, create one
@@ -67,6 +71,7 @@ impl SiteInfo {
         if let Some(notify) = notify {
             // Wait for the in-flight request to complete
             notify.notified().await;
+            log::info!("In-flight request for {} completed after {:?}", cache_key, start.elapsed());
 
             // Reload after waiting (nostr client may have cached the manifest)
             let client_clone = client.clone();
@@ -87,9 +92,11 @@ impl SiteInfo {
                     SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
 
                 if !site.fetch_manifest().await?.is_some() {
+                    log::info!("Failed to fetch manifest for {}, returning None", cache_key);
                     None
                 } else {
                     site.load_server_list().await?;
+                    log::info!("Loaded {} site for {} in {:?}", site_type, &pubkey_hex[..8], start.elapsed());
                     Some(SiteInfo {
                         inner: Arc::new(RwLock::new(site)),
                     })
@@ -109,9 +116,11 @@ impl SiteInfo {
 
     /// Load and pull the file associated with a given route
     pub async fn serve_route(&self, path: &str) -> Result<PathBuf> {
+        let start = std::time::Instant::now();
         let mut inner = self.inner.write().await;
 
         if inner.is_expired() {
+            log::info!("Site info expired, reloading server list for path {}", path);
             inner.routes.clear();
             inner.load_server_list().await?;
             inner.refresh_timestamp();
@@ -121,6 +130,7 @@ impl SiteInfo {
             if let Some(i) = inner.routes.get(path) {
                 Some(i.clone())
             } else {
+                log::info!("Route {} not cached, loading", path);
                 inner.load_route(path).await?
             }
         } {
@@ -129,7 +139,9 @@ impl SiteInfo {
             bail!("route not found");
         };
 
-        route.load_cached(&inner.server_list).await
+        let result = route.load_cached(&inner.server_list).await;
+        log::info!("Served route {} in {:?}", path, start.elapsed());
+        result
     }
 
     /// Extract site info from a host header (Axum-compatible)
@@ -151,7 +163,7 @@ impl SiteInfo {
             return Err(anyhow!("No subdomain found"));
         };
 
-        log::debug!("Extracted subdomain: {}", subdomain);
+        log::info!("Extracted subdomain: {}", subdomain);
 
         // Get the managed state
         let alias_map_read = alias_map.read().await;
@@ -402,7 +414,11 @@ impl SiteInfoInner {
             filter = filter.identifier(id);
         }
 
+        let start = std::time::Instant::now();
+        let pubkey_short = hex::encode(&self.pubkey);
+        log::info!("Fetching manifest event (kind {}) for pubkey {}", kind, &pubkey_short[..8]);
         let events = self.client.fetch_events(filter, DEFAULT_TIMEOUT).await?;
+        log::info!("Fetched manifest in {:?}, got {} events", start.elapsed(), events.len());
 
         // Validate the manifest conforms to NIP-5A spec
         if let Some(event) = events.into_iter().next() {
@@ -560,10 +576,16 @@ impl SiteInfoInner {
 
     /// Load a single route for this site using NIP-5A manifest format
     pub async fn load_route(&mut self, path: &str) -> Result<Option<SiteRoute>> {
+        let start = std::time::Instant::now();
+        log::info!("Loading route: {}", path);
+
         // Fetch the site manifest (NIP-5A format)
         let manifest = match self.fetch_manifest().await? {
             Some(ev) => ev,
-            None => return Ok(None),
+            None => {
+                log::info!("No manifest found for route {}", path);
+                return Ok(None);
+            }
         };
 
         // Extract hash from path tag
@@ -575,6 +597,8 @@ impl SiteInfoInner {
                 };
                 self.routes
                     .insert(new_route.path.clone(), new_route.clone());
+                let hash_short = hex::encode(&new_route.key);
+                log::info!("Loaded route {} in {:?}, hash: {}", path, start.elapsed(), &hash_short[..8]);
                 Ok(Some(new_route))
             }
             Err(e) => {
@@ -586,6 +610,10 @@ impl SiteInfoInner {
 
     /// Load blossom server list from manifest server tags or BUD-03 (kind 10063)
     pub async fn load_server_list(&mut self) -> Result<()> {
+        let start = std::time::Instant::now();
+        let pubkey_short = hex::encode(&self.pubkey);
+        log::info!("Loading server list for pubkey {}", &pubkey_short[..8]);
+
         // First check for server tags in the manifest (NIP-5A)
         if let Some(manifest) = self.fetch_manifest().await? {
             let manifest_servers: Vec<Url> = manifest
@@ -596,12 +624,14 @@ impl SiteInfoInner {
                 .collect();
 
             if !manifest_servers.is_empty() {
+                log::info!("Loaded {} servers from manifest in {:?}", manifest_servers.len(), start.elapsed());
                 self.server_list = manifest_servers;
                 return Ok(());
             }
         }
 
         // Fall back to BUD-03 (kind 10063) user servers
+        log::info!("No servers in manifest, fetching BUD-03 (kind 10063)");
         let filter = Filter::new()
             .kind(Kind::Custom(10_063))
             .author(PublicKey::from_slice(&self.pubkey)?);
@@ -615,6 +645,7 @@ impl SiteInfoInner {
                 .filter_map(|content| content.parse().ok())
                 .collect();
             if !server_tags.is_empty() {
+                log::info!("Loaded {} servers from BUD-03 in {:?}", server_tags.len(), start.elapsed());
                 self.server_list = server_tags;
             }
         }
