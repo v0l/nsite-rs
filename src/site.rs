@@ -119,30 +119,36 @@ impl SiteInfo {
     /// Load and pull the file associated with a given route
     pub async fn serve_route(&self, path: &str) -> Result<PathBuf> {
         let start = std::time::Instant::now();
-        let mut inner = self.inner.write().await;
+        let server_list;
+        let route = {
+            let mut inner = self.inner.write().await;
 
-        if inner.is_expired() {
-            log::info!("Site info expired, reloading for path {}", path);
-            inner.routes.clear();
-            inner.manifest = None;
-            inner.load_server_list().await?;
-            inner.refresh_timestamp();
-        }
-
-        let route = if let Some(r) = {
-            if let Some(i) = inner.routes.get(path) {
-                Some(i.clone())
-            } else {
-                log::info!("Route {} not cached, loading", path);
-                inner.load_route(path).await?
+            if inner.is_expired() {
+                log::info!("Site info expired, reloading for path {}", path);
+                inner.routes.clear();
+                inner.manifest = None;
+                inner.load_server_list().await?;
+                inner.refresh_timestamp();
             }
-        } {
-            r
-        } else {
-            bail!("route not found");
+
+            let route = if let Some(r) = {
+                if let Some(i) = inner.routes.get(path) {
+                    Some(i.clone())
+                } else {
+                    log::info!("Route {} not cached, loading", path);
+                    inner.load_route(path).await?
+                }
+            } {
+                r
+            } else {
+                bail!("route not found");
+            };
+
+            server_list = inner.server_list.clone();
+            route
         };
 
-        let result = route.load_cached(&inner.server_list).await;
+        let result = route.load_cached(&server_list).await;
         log::info!("Served route {} in {:?}", path, start.elapsed());
         result
     }
@@ -380,13 +386,18 @@ impl SiteRoute {
             Ok(out_path)
         } else {
             for s in server_list {
-                match reqwest::get(s.join(&key_hex)?).await {
+                let url = s.join(&key_hex)?;
+                let start = std::time::Instant::now();
+                match reqwest::get(url.clone()).await {
                     Ok(r) => {
-                        if !r.status().is_success() {
+                        let status = r.status();
+                        if !status.is_success() {
+                            log::info!("Upstream GET {} {} (total: {:?})", url, status, start.elapsed());
                             continue;
                         }
                         let bytes = r.bytes().await?;
                         tokio::fs::write(&out_path, &bytes).await?;
+                        log::info!("Upstream GET {} {} {} bytes (total: {:?})", url, status, bytes.len(), start.elapsed());
                         return Ok(out_path);
                     }
                     Err(e) => {
