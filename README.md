@@ -1,6 +1,15 @@
-# NSite-RS
+# NSite-RS: NIP-5A Gateway
 
-Nostr-based website hosting via subdomains.
+A high-performance Rust gateway that serves decentralized websites published as Nostr events, implementing [NIP-5A](https://github.com/nostr-protocol/nips/blob/master/5A.md) (Content Hosting).
+
+## What is NSite?
+
+NSite transforms your Nostr relays into a decentralized web hosting platform. Websites are published as signed Nostr events and served via subdomains, enabling:
+
+- **Censorship-resistant hosting** - Content is distributed across Nostr relays
+- **No infrastructure** - Sites are served directly from Nostr events
+- **Built-in identity** - Public keys serve as domain ownership proof
+- **Zero configuration** - Subdomain routing handles site discovery automatically
 
 ## Quick Start
 
@@ -8,35 +17,47 @@ Nostr-based website hosting via subdomains.
 cargo run -- --relay wss://relay.damus.io
 ```
 
-## How It Works
+The gateway will:
+1. Connect to specified Nostr relays
+2. Listen for site events (kinds 15128, 35128)
+3. Serve sites via subdomain routing
+4. Display a directory at the root domain
 
-Sites are published as Nostr events and served via subdomains:
+## Site Types
 
-| Type | Kind | Subdomain Format |
-|------|------|------------------|
-| Root Site | 15128 | `npub1...` |
-| Named Site | 35128 | `<50-char-base36-pubkey><dTag>` |
+| Type | Kind | Subdomain Format | Use Case |
+|------|------|------------------|----------|
+| **Root Site** | 15128 | `npub1...` | Personal sites, blogs |
+| **Named Site** | 35128 | `<pubkeyB36><dTag>` | Projects, organizations |
 
-### Publishing a Site
+### Named Site Example
+- Pubkey (hex): `9ec7a778167afb1d30c4833de9322da0c08ba71a69e1911d5578d3144bb56437`
+- d tag: `aa`
+- Subdomain: `3ygtacgoaw2nnorgkiatssdw30bzgikmmveotztz116wa7fkfraa aa`
+- URL: `http://3ygtacgoaw2nnorgkiatssdw30bzgikmmveotztz116wa7fkfraa aa/`
+
+## Publishing a Site
 
 Create a Nostr event with:
-- **Kind**: 15128 (root) or 35128 (named)
-- **Tags**: `path:/index.html`, `d:<name>` (for named sites), `source:<url>` (optional)
-- **Content**: Your site data
 
-### Accessing Sites
+```json
+{
+  "kind": 35128,
+  "tags": [
+    ["d", "myproject"],
+    ["path", "/index.html"],
+    ["source", "https://github.com/..."]
+  ],
+  "content": "..."
+}
+```
 
-- Root: `http://npub1.../`
-- Named: `http://<pubkeyB36><dTag>/`
+### Required Tags
+- **`d`** - Unique identifier (for named sites)
+- **`path`** - File path mapping (e.g., `/index.html`, `/style.css`)
 
-## Directory
-
-The root domain serves a Preact-powered directory page that lists all published sites with:
-- Profile avatar and name
-- Description (from profile)
-- Creation date
-- Source link (if provided)
-- Visit button
+### Optional Tags
+- **`source`** - Link to source code/repository
 
 ## Architecture
 
@@ -44,13 +65,30 @@ The root domain serves a Preact-powered directory page that lists all published 
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   Browser    │────▶│  Axum Router │────▶│ Site Handler │
 └──────────────┘     └──────────────┘     └──────────────┘
-                              │                   │
-                              ▼                   ▼
-                      ┌──────────────┐     ┌──────────────┐
-                      │ Root Domain  │     │ Subdomain    │
-                      │ → Directory  │     │ → Site Files │
-                      └──────────────┘     └──────────────┘
+                    (subdomain-based)           │
+                                                ▼
+                                       ┌──────────────┐
+                                       │ Nostr Relay  │
+                                       │ (manifest +  │
+                                       │  content)    │
+                                       └──────────────┘
 ```
+
+### Request Flow
+1. Browser requests `http://<subdomain>/path/to/file`
+2. Axum extracts pubkey from subdomain
+3. Site handler fetches manifest (kind 15128/35128) from relays
+4. Manifest maps paths to content hashes
+5. Content fetched from Blossom servers or relay attachments
+6. Response cached for subsequent requests
+
+## Features
+
+- **Concurrent loading** - Multiple assets loaded in parallel
+- **Transparent caching** - Content cached to temp directory
+- **Multiple relay support** - Fallback across relays for resilience
+- **Profile integration** - Displays author avatars and names from Nostr metadata
+- **Directory page** - Auto-generated site listing at root domain
 
 ## Development
 
@@ -68,14 +106,23 @@ cargo fmt --check
 cargo clippy -- -D warnings
 
 # Run with custom relay
-cargo run -- --relay wss://relay.damus.io
+cargo run -- --relay wss://relay.damus.io --relay wss://nos.lol
 ```
 
 ## Dependencies
 
-- **Rust**: Axum, tokio, reqwest
-- **Nostr**: nostr-sdk, @snort/system (frontend)
-- **Frontend**: Preact, @scure/base
+- **Rust**: Axum, tokio, reqwest, nostr-sdk
+- **Frontend**: Preact, @snort/system, @scure/base
+- **TLS**: rustls with aws-lc-rs
+
+## NIP-5A Compliance
+
+This gateway fully implements NIP-5A:
+- ✅ Root site events (kind 15128)
+- ✅ Named site events (kind 35128)
+- ✅ Subdomain routing based on pubkey encoding
+- ✅ Path tag resolution
+- ✅ d tag validation for named sites
 
 ## License
 

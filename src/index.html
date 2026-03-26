@@ -23,7 +23,7 @@
     <meta property="twitter:description" content="Discover and host websites on the Nostr decentralized network. Censorship-resistant web hosting using Nostr events.">
     <meta property="twitter:image" content="https://nsite.run/og-image.png">
     
-   <!-- Theme color for browser UI -->
+    <!-- Theme color for browser UI -->
     <meta name="theme-color" content="#18181b">
     
     <!-- Structured data for SEO -->
@@ -41,6 +41,222 @@
         }
     }
     </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.5;
+            color: hsl(222.2 47.4% 11.2%);
+            background: hsl(0 0% 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+
+        h1 {
+            color: hsl(222.2 47.4% 11.2%);
+            margin-bottom: 0;
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+        }
+
+        .subtitle {
+            color: hsl(215 20.2% 65.1%);
+            margin-bottom: 32px;
+            font-size: 1.25rem;
+        }
+
+        .status {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 32px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            background: hsl(210 40% 96.1%);
+            color: hsl(222.2 47.4% 11.2%);
+        }
+
+        .status.loading {
+            background: hsl(210 40% 96.1%);
+        }
+
+        .status.success {
+            background: hsl(142 76% 36% / 0.1);
+            color: hsl(142 76% 36%);
+        }
+
+        .status.error {
+            background: hsl(0 84% 60% / 0.1);
+            color: hsl(0 84% 60%);
+        }
+
+        .sites-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .site-card {
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.2s ease;
+            background: hsl(0 0% 100%);
+            box-shadow: 0 1px 3px hsl(0 0% 0% / 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .site-card:hover {
+            border-color: hsl(215 20.2% 65.1%);
+            box-shadow: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -2px hsl(0 0% 0% / 0.05);
+            transform: translateY(-2px);
+        }
+
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .profile-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: hsl(210 40% 96.1%);
+            border: none;
+        }
+
+        .profile-name {
+            font-weight: 700;
+            font-size: 1.125rem;
+            color: hsl(222.2 47.4% 11.2%);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .site-type-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            margin-left: 6px;
+        }
+
+        .site-type-badge.named {
+            background: hsl(262 83% 58%);
+            color: white;
+        }
+
+        .site-description {
+            font-size: 0.9375rem;
+            color: hsl(215.4 16.3% 46.9%);
+            margin-top: 8px;
+            line-height: 1.6;
+            max-height: 3.2em;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .site-meta {
+            font-size: 0.75rem;
+            color: hsl(215 20.2% 65.1%);
+            margin-top: 12px;
+            font-weight: 500;
+        }
+
+        .visit-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 16px;
+            padding: 10px 20px;
+            background: hsl(222.2 47.4% 11.2%);
+            color: hsl(210 40% 98%);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 1px 3px hsl(0 0% 0% / 0.1);
+            align-self: flex-start;
+        }
+
+        .visit-btn:hover {
+            background: hsl(217.2 32.6% 17.5%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px hsl(0 0% 0% / 0.15);
+        }
+
+        .visit-btn.source-btn {
+            margin-left: 8px;
+            background: hsl(210 40% 96.1%);
+            color: hsl(222.2 47.4% 11.2%);
+        }
+
+        .visit-btn.source-btn:hover {
+            background: hsl(215 20.2% 65.1%);
+            color: white;
+        }
+
+        .relay-info {
+            margin-top: 40px;
+            padding: 20px;
+            background: hsl(0 0% 98%);
+            border-radius: 12px;
+            font-size: 0.875rem;
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+        }
+
+        .relay-info h3 {
+            margin-bottom: 16px;
+            color: hsl(222.2 47.4% 11.2%);
+            font-size: 0.875rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .relay-list {
+            list-style: none;
+            margin-bottom: 12px;
+        }
+
+        .relay-list li {
+            padding: 6px 0;
+            color: hsl(215 20.2% 65.1%);
+            font-size: 0.8125rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        .connection-status {
+            padding-top: 12px;
+            border-top: 1px solid hsl(214.3 31.8% 91.4%);
+            color: hsl(215 20.2% 65.1%);
+            font-size: 0.8125rem;
+        }
+    </style>
 </head>
 <body>
 <div id="app"></div>
