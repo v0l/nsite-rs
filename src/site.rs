@@ -10,10 +10,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs::create_dir_all;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const SITE_INFO_EXPIRY: Duration = Duration::from_secs(3600);
+
+/// Global in-flight request tracker to prevent duplicate concurrent loads
+static IN_FLIGHT_REQUESTS: once_cell::sync::Lazy<
+    Arc<Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
+> = once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 #[derive(Clone)]
 pub struct SiteInfo {
@@ -38,17 +43,68 @@ impl SiteInfo {
         pubkey: &[u8; 32],
         identifier: Option<&str>,
     ) -> Result<Option<Self>> {
-        let client_clone = client.clone();
-        let mut site = SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
+        let pubkey_hex = hex::encode(pubkey);
+        let cache_key = if let Some(ref id) = identifier {
+            format!("{}-{}", pubkey_hex, id)
+        } else {
+            pubkey_hex
+        };
 
-        // Try to load index.html to verify the site exists
-        if site.load_route("/index.html").await?.is_none() {
-            return Ok(None);
+        // Check if there's an in-flight request for this site
+        let notify = {
+            let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
+            if let Some(existing_notify) = in_flight.get(&cache_key) {
+                // Another request is loading this site, wait for it
+                Some(existing_notify.clone())
+            } else {
+                // No in-flight request, create one
+                let notify = Arc::new(tokio::sync::Notify::new());
+                in_flight.insert(cache_key.clone(), notify.clone());
+                None
+            }
+        };
+
+        if let Some(notify) = notify {
+            // Wait for the in-flight request to complete
+            notify.notified().await;
+
+            // Reload after waiting (nostr client may have cached the manifest)
+            let client_clone = client.clone();
+            let mut site = SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
+
+            if !site.fetch_manifest().await?.is_some() {
+                return Ok(None);
+            }
+            site.load_server_list().await?;
+            Ok(Some(SiteInfo {
+                inner: Arc::new(RwLock::new(site)),
+            }))
+        } else {
+            // We're the one loading this site
+            let result = {
+                let client_clone = client.clone();
+                let mut site =
+                    SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
+
+                if !site.fetch_manifest().await?.is_some() {
+                    None
+                } else {
+                    site.load_server_list().await?;
+                    Some(SiteInfo {
+                        inner: Arc::new(RwLock::new(site)),
+                    })
+                }
+            };
+
+            // Remove from in-flight and notify waiters
+            let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
+            in_flight.remove(&cache_key);
+
+            // Notify all waiters
+            drop(in_flight);
+
+            Ok(result)
         }
-        site.load_server_list().await?;
-        Ok(Some(SiteInfo {
-            inner: Arc::new(RwLock::new(site)),
-        }))
     }
 
     /// Load and pull the file associated with a given route
@@ -82,7 +138,6 @@ impl SiteInfo {
         client: &Client,
         site_map: &SiteMap,
         alias_map: &SiteAliasMap,
-        _requested_path: &str,
     ) -> Result<Self> {
         // Parse the subdomain from the host
         // Expected format: subdomain.domain.tld or subdomain.domain.tld:port

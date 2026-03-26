@@ -99,19 +99,16 @@ async fn serve_site(
         .and_then(|h| h.to_str().ok())
         .ok_or(StatusCode::BAD_REQUEST)?;
 
-    let site =
-        match site::SiteInfo::from_request(host, &client, &site_map, &site_alias_map, &path_buf)
-            .await
-        {
-            Ok(site) => site,
-            Err(_) => {
-                let mut response = Response::new(axum::body::Body::from(INDEX_HTML));
-                response
-                    .headers_mut()
-                    .insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
-                return Ok(response);
-            }
-        };
+    let site = match site::SiteInfo::from_request(host, &client, &site_map, &site_alias_map).await {
+        Ok(site) => site,
+        Err(_) => {
+            let mut response = Response::new(axum::body::Body::from(INDEX_HTML));
+            response
+                .headers_mut()
+                .insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
+            return Ok(response);
+        }
+    };
 
     match site.serve_route(&format!("/{}", path_buf)).await {
         Ok(file_path) => {

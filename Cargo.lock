@@ -1311,6 +1311,7 @@ dependencies = [
  "hex",
  "log",
  "nostr-sdk",
+ "once_cell",
  "reqwest",
  "rustls",
  "tokio",
