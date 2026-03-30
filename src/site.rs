@@ -57,17 +57,41 @@ impl SiteInfo {
         let site_type = identifier.map_or("root".to_string(), |id| format!("named:{}", id));
         log::info!("Loading {} site for pubkey {} (cache_key: {})", site_type, &pubkey_hex[..8], cache_key);
 
-        // Check if there's an in-flight request for this site
-        let (notify, is_waiter) = {
+        // RAII guard to ensure in-flight cleanup even on cancellation/panic
+        struct InFlightGuard {
+            cache_key: String,
+            notify: Option<Arc<tokio::sync::Notify>>,
+        }
+
+        impl Drop for InFlightGuard {
+            fn drop(&mut self) {
+                // Only cleanup if we're the loader (not a waiter)
+                if self.notify.take().is_some() {
+                    // Spawn a task to do the async cleanup since we can't await in Drop
+                    let key = self.cache_key.clone();
+                    tokio::spawn(async move {
+                        let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
+                        in_flight.remove(&key);
+                        // Note: notify.notify_waiters() can't be called here safely
+                        // because the Notify was already moved. The main path handles notification.
+                    });
+                }
+            }
+        }
+
+        let (notify, is_waiter, guard) = {
             let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
             if let Some(existing_notify) = in_flight.get(&cache_key) {
                 log::info!("Request for {} is in-flight, waiting...", cache_key);
-                (existing_notify.clone(), true)
+                (existing_notify.clone(), true, None)
             } else {
-                // No in-flight request, create one
+                // No in-flight request, create one with guard
                 let notify = Arc::new(tokio::sync::Notify::new());
                 in_flight.insert(cache_key.clone(), notify.clone());
-                (notify, false)
+                (notify.clone(), false, Some(InFlightGuard {
+                    cache_key: cache_key.clone(),
+                    notify: Some(notify),
+                }))
             }
         };
 
@@ -105,7 +129,8 @@ impl SiteInfo {
                 }
             }
         } else {
-            // We're the one loading this site - ensure cleanup on any path
+            // We're the one loading this site - guard will handle cleanup on any path
+            // including cancellation/panic. The guard is dropped when this scope ends.
             let result = {
                 let client_clone = client.clone();
                 let mut site =
@@ -135,13 +160,11 @@ impl SiteInfo {
                 }
             };
 
-            // Always remove from in-flight and notify waiters, even on error
-            let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
-            in_flight.remove(&cache_key);
-
-            // Notify all waiters before dropping the lock
+            // Notify all waiters before the guard cleans up
             notify.notify_waiters();
-            drop(in_flight);
+
+            // Explicitly drop the guard to do immediate cleanup (instead of waiting for scope end)
+            drop(guard);
 
             Ok(result)
         }
