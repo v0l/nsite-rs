@@ -15,6 +15,9 @@ use tokio::sync::{Mutex, RwLock};
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const SITE_INFO_EXPIRY: Duration = Duration::from_secs(3600);
 
+/// Timeout for waiting on in-flight requests
+const IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Global in-flight request tracker to prevent duplicate concurrent loads
 static IN_FLIGHT_REQUESTS: once_cell::sync::Lazy<
     Arc<Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
@@ -70,20 +73,24 @@ impl SiteInfo {
 
         if is_waiter {
             // Wait for the in-flight request to complete with a timeout
-            tokio::time::timeout(Duration::from_secs(30), notify.notified())
+            let _timeout_result = tokio::time::timeout(IN_FLIGHT_TIMEOUT, notify.notified())
                 .await
                 .unwrap_or_else(|_| {
-                    log::warn!("Timeout waiting for in-flight request for {} after 30s", cache_key);
+                    log::warn!("Timeout waiting for in-flight request for {} after {:?}", cache_key, IN_FLIGHT_TIMEOUT);
                 });
+
             log::info!("In-flight request for {} completed after {:?}", cache_key, start.elapsed());
 
             // Reload after waiting (nostr client may have cached the manifest)
             let client_clone = client.clone();
             let mut site = SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
 
+            // After waiting, we need to re-fetch since the loader may have failed
+            // Propagate errors instead of silently returning Ok(None)
             match site.fetch_manifest().await {
-                Ok(Some(_manifest)) => {
-                    site.manifest = Some(_manifest.clone());
+                Ok(Some(manifest)) => {
+                    // Move the manifest into site.manifest (no clone needed)
+                    site.manifest = Some(manifest);
                     if let Err(e) = site.load_server_list().await {
                         log::warn!("Failed to load server list: {}", e);
                     }
@@ -93,8 +100,8 @@ impl SiteInfo {
                 }
                 Ok(None) => Ok(None),
                 Err(e) => {
-                    log::warn!("Failed to fetch manifest after waiting: {}", e);
-                    Ok(None)
+                    // Propagate the error - caller needs to know this failed
+                    Err(anyhow!("Failed to fetch manifest after waiting for in-flight request: {e}"))
                 }
             }
         } else {
@@ -107,7 +114,8 @@ impl SiteInfo {
                 // Fetch and cache the manifest
                 match site.fetch_manifest().await {
                     Ok(Some(manifest)) => {
-                        site.manifest = Some(manifest.clone());
+                        // Move the manifest into site.manifest (no clone needed)
+                        site.manifest = Some(manifest);
                         if let Err(e) = site.load_server_list().await {
                             log::warn!("Failed to load server list: {}", e);
                         }
