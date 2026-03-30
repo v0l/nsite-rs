@@ -99,52 +99,54 @@ async fn serve_site(
         .and_then(|h| h.to_str().ok())
         .ok_or(StatusCode::BAD_REQUEST)?;
 
-    let site = match site::SiteInfo::from_request(host, &client, &site_map, &site_alias_map).await {
-        Ok(site) => site,
-        Err(_) => {
+    match site::SiteInfo::from_request(host, &client, &site_map, &site_alias_map).await {
+        Ok(Some(site)) => {
+            match site.serve_route(&format!("/{}", path_buf)).await {
+                Ok(file_path) => {
+                    let mut file = File::open(&file_path).await.map_err(|_| {
+                        error!("Failed to open file");
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+
+                    let mut contents = Vec::new();
+                    file.read_to_end(&mut contents).await.map_err(|_| {
+                        error!("Failed to read file");
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+
+                    let mut response = Response::new(axum::body::Body::from(contents));
+                    let content_type = match file_path.extension().and_then(|e| e.to_str()) {
+                        Some("html") | Some("htm") => "text/html",
+                        Some("css") => "text/css",
+                        Some("js") => "application/javascript",
+                        Some("json") => "application/json",
+                        Some("png") => "image/png",
+                        Some("jpg") | Some("jpeg") => "image/jpeg",
+                        Some("gif") => "image/gif",
+                        Some("svg") => "image/svg+xml",
+                        Some("woff") => "font/woff",
+                        Some("woff2") => "font/woff2",
+                        _ => "application/octet-stream",
+                    };
+                    response
+                        .headers_mut()
+                        .insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+                    Ok(response)
+                }
+                Err(e) => {
+                    error!("Failed to serve route: {}", e);
+                    Err(StatusCode::NOT_FOUND)
+                }
+            }
+        }
+        Ok(None) => {
+            // No subdomain - serve index.html
             let mut response = Response::new(axum::body::Body::from(INDEX_HTML));
             response
                 .headers_mut()
                 .insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
-            return Ok(response);
-        }
-    };
-
-    match site.serve_route(&format!("/{}", path_buf)).await {
-        Ok(file_path) => {
-            let mut file = File::open(&file_path).await.map_err(|_| {
-                error!("Failed to open file");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
-            let mut contents = Vec::new();
-            file.read_to_end(&mut contents).await.map_err(|_| {
-                error!("Failed to read file");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
-            let mut response = Response::new(axum::body::Body::from(contents));
-            let content_type = match file_path.extension().and_then(|e| e.to_str()) {
-                Some("html") | Some("htm") => "text/html",
-                Some("css") => "text/css",
-                Some("js") => "application/javascript",
-                Some("json") => "application/json",
-                Some("png") => "image/png",
-                Some("jpg") | Some("jpeg") => "image/jpeg",
-                Some("gif") => "image/gif",
-                Some("svg") => "image/svg+xml",
-                Some("woff") => "font/woff",
-                Some("woff2") => "font/woff2",
-                _ => "application/octet-stream",
-            };
-            response
-                .headers_mut()
-                .insert(header::CONTENT_TYPE, content_type.parse().unwrap());
             Ok(response)
         }
-        Err(e) => {
-            error!("Failed to serve route: {}", e);
-            Err(StatusCode::NOT_FOUND)
-        }
+        Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }

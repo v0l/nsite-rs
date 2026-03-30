@@ -215,12 +215,15 @@ impl SiteInfo {
     }
 
     /// Extract site info from a host header (Axum-compatible)
+    /// Returns Ok(Some(site)) if site found
+    /// Returns Ok(None) if no subdomain in host (serve index.html fallback)
+    /// Returns Err if subdomain found but site not found/invalid
     pub async fn from_request(
         host: &str,
         client: &Client,
         site_map: &SiteMap,
         alias_map: &SiteAliasMap,
-    ) -> Result<Self> {
+    ) -> Result<Option<Self>> {
         // Parse the subdomain from the host
         // Expected format: subdomain.domain.tld or subdomain.domain.tld:port
         let host_without_port = host.split(':').next().unwrap_or(host);
@@ -230,7 +233,8 @@ impl SiteInfo {
             // Has subdomain: subdomain.domain.tld
             parts[0].to_string()
         } else {
-            return Err(anyhow!("No subdomain found"));
+            // No subdomain - return Ok(None) to trigger index.html fallback
+            return Ok(None);
         };
 
         log::info!("Extracted subdomain: {}", subdomain);
@@ -351,7 +355,7 @@ impl SiteInfo {
             },
         };
 
-        Ok(site_info)
+        Ok(Some(site_info))
     }
 }
 
