@@ -55,61 +55,84 @@ impl SiteInfo {
         log::info!("Loading {} site for pubkey {} (cache_key: {})", site_type, &pubkey_hex[..8], cache_key);
 
         // Check if there's an in-flight request for this site
-        let notify = {
+        let (notify, is_waiter) = {
             let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
             if let Some(existing_notify) = in_flight.get(&cache_key) {
                 log::info!("Request for {} is in-flight, waiting...", cache_key);
-                Some(existing_notify.clone())
+                (existing_notify.clone(), true)
             } else {
                 // No in-flight request, create one
                 let notify = Arc::new(tokio::sync::Notify::new());
                 in_flight.insert(cache_key.clone(), notify.clone());
-                None
+                (notify, false)
             }
         };
 
-        if let Some(notify) = notify {
-            // Wait for the in-flight request to complete
-            notify.notified().await;
+        if is_waiter {
+            // Wait for the in-flight request to complete with a timeout
+            tokio::time::timeout(Duration::from_secs(30), notify.notified())
+                .await
+                .unwrap_or_else(|_| {
+                    log::warn!("Timeout waiting for in-flight request for {} after 30s", cache_key);
+                });
             log::info!("In-flight request for {} completed after {:?}", cache_key, start.elapsed());
 
             // Reload after waiting (nostr client may have cached the manifest)
             let client_clone = client.clone();
             let mut site = SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
 
-            if site.fetch_manifest().await?.is_none() {
-                return Ok(None);
+            match site.fetch_manifest().await {
+                Ok(Some(_manifest)) => {
+                    site.manifest = Some(_manifest.clone());
+                    if let Err(e) = site.load_server_list().await {
+                        log::warn!("Failed to load server list: {}", e);
+                    }
+                    Ok(Some(SiteInfo {
+                        inner: Arc::new(RwLock::new(site)),
+                    }))
+                }
+                Ok(None) => Ok(None),
+                Err(e) => {
+                    log::warn!("Failed to fetch manifest after waiting: {}", e);
+                    Ok(None)
+                }
             }
-            site.load_server_list().await?;
-            Ok(Some(SiteInfo {
-                inner: Arc::new(RwLock::new(site)),
-            }))
         } else {
-            // We're the one loading this site
+            // We're the one loading this site - ensure cleanup on any path
             let result = {
                 let client_clone = client.clone();
                 let mut site =
                     SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
 
                 // Fetch and cache the manifest
-                if let Some(manifest) = site.fetch_manifest().await? {
-                    site.manifest = Some(manifest.clone());
-                    site.load_server_list().await?;
-                    log::info!("Loaded {} site for {} in {:?}", site_type, &pubkey_hex[..8], start.elapsed());
-                    Some(SiteInfo {
-                        inner: Arc::new(RwLock::new(site)),
-                    })
-                } else {
-                    log::info!("Failed to fetch manifest for {}, returning None", cache_key);
-                    None
+                match site.fetch_manifest().await {
+                    Ok(Some(manifest)) => {
+                        site.manifest = Some(manifest.clone());
+                        if let Err(e) = site.load_server_list().await {
+                            log::warn!("Failed to load server list: {}", e);
+                        }
+                        log::info!("Loaded {} site for {} in {:?}", site_type, &pubkey_hex[..8], start.elapsed());
+                        Some(SiteInfo {
+                            inner: Arc::new(RwLock::new(site)),
+                        })
+                    }
+                    Ok(None) => {
+                        log::info!("No manifest found for {}, returning None", cache_key);
+                        None
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to fetch manifest for {}: {}", cache_key, e);
+                        None
+                    }
                 }
             };
 
-            // Remove from in-flight and notify waiters
+            // Always remove from in-flight and notify waiters, even on error
             let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
             in_flight.remove(&cache_key);
 
-            // Notify all waiters
+            // Notify all waiters before dropping the lock
+            notify.notify_waiters();
             drop(in_flight);
 
             Ok(result)
