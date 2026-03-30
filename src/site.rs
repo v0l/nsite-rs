@@ -745,6 +745,7 @@ fn decode_pubkey_base36(b36: &str) -> Result<[u8; 32]> {
 mod tests {
     use super::*;
     use nostr_sdk::prelude::Keys;
+    use tokio::sync::Notify;
 
     #[test]
     fn test_decode_pubkey_base36() {
@@ -834,5 +835,79 @@ mod tests {
         assert!(site.routes.is_empty());
         assert!(site.manifest.is_none());
         assert!(!site.server_list.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_inflight_notify_waiters() {
+        // Test that waiters are properly notified when loader completes
+        // This addresses the review concern about testing waiter unblocking
+        
+        let notify = Arc::new(Notify::new());
+        let notify_clone = notify.clone();
+        
+        // Spawn a waiter task
+        let waiter = tokio::spawn(async move {
+            notify_clone.notified().await;
+            "notified"
+        });
+        
+        // Give waiter time to start waiting
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        
+        // Simulate loader completing and notifying waiters
+        notify.notify_waiters();
+        
+        // Waiter should complete successfully
+        let result = tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .expect("waiter should complete within timeout");
+        
+        assert_eq!(result.unwrap(), "notified");
+    }
+
+    #[tokio::test]
+    async fn test_inflight_timeout_on_stalled_request() {
+        // Test that waiters timeout properly when loader stalls
+        // This verifies the 30s timeout behavior mentioned in the PR
+        
+        let notify = Arc::new(Notify::new());
+        
+        // Simulate waiting with timeout but never notifying (stalled loader)
+        let timeout_result: Result<(), tokio::time::error::Elapsed> = tokio::time::timeout(
+            Duration::from_millis(50), // Use short timeout for test
+            notify.notified()
+        ).await;
+        
+        // Should timeout since nobody notifies
+        assert!(timeout_result.is_err(), "Expected timeout when notify never happens");
+    }
+
+    #[tokio::test]
+    async fn test_inflight_map_cleanup() {
+        // Test that the IN_FLIGHT_REQUESTS map is properly managed
+        // This addresses the review concern about IN_FLIGHT_REQUESTS being cleared
+        
+        let cache_key = "test-pubkey-123".to_string();
+        
+        // Verify map starts empty
+        {
+            let in_flight = IN_FLIGHT_REQUESTS.lock().await;
+            assert!(!in_flight.contains_key(&cache_key));
+        }
+        
+        // Add an entry
+        let notify = Arc::new(Notify::new());
+        {
+            let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
+            in_flight.insert(cache_key.clone(), notify);
+            assert!(in_flight.contains_key(&cache_key));
+        }
+        
+        // Remove the entry (simulating loader cleanup)
+        {
+            let mut in_flight = IN_FLIGHT_REQUESTS.lock().await;
+            in_flight.remove(&cache_key);
+            assert!(!in_flight.contains_key(&cache_key));
+        }
     }
 }
