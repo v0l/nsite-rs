@@ -131,7 +131,7 @@ impl SiteInfo {
         } else {
             // We're the one loading this site - guard will handle cleanup on any path
             // including cancellation/panic. The guard is dropped when this scope ends.
-            let result = {
+            let (result, fetch_error) = {
                 let client_clone = client.clone();
                 let mut site =
                     SiteInfoInner::new(*pubkey, client_clone, identifier.map(String::from));
@@ -141,21 +141,23 @@ impl SiteInfo {
                     Ok(Some(manifest)) => {
                         // Move the manifest into site.manifest (no clone needed)
                         site.manifest = Some(manifest);
+                        // Note: load_server_list() errors are logged but not fatal
+                        // - server list is optional for basic site functionality
                         if let Err(e) = site.load_server_list().await {
                             log::warn!("Failed to load server list: {}", e);
                         }
                         log::info!("Loaded {} site for {} in {:?}", site_type, &pubkey_hex[..8], start.elapsed());
-                        Some(SiteInfo {
+                        (Some(SiteInfo {
                             inner: Arc::new(RwLock::new(site)),
-                        })
+                        }), None)
                     }
                     Ok(None) => {
                         log::info!("No manifest found for {}, returning None", cache_key);
-                        None
+                        (None, None)
                     }
                     Err(e) => {
-                        log::warn!("Failed to fetch manifest for {}: {}", cache_key, e);
-                        None
+                        // Capture the error for potential propagation after cleanup
+                        (None, Some(e))
                     }
                 }
             };
@@ -166,7 +168,12 @@ impl SiteInfo {
             // Explicitly drop the guard to do immediate cleanup (instead of waiting for scope end)
             drop(guard);
 
-            Ok(result)
+            // Propagate fetch errors (not found returns None, actual errors return Err)
+            if let Some(e) = fetch_error {
+                Err(anyhow!("Failed to fetch manifest for {}: {e}", cache_key))
+            } else {
+                Ok(result)
+            }
         }
     }
 
